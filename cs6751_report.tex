@@ -4,6 +4,8 @@
 \usepackage{amssymb}
 \usepackage{graphicx}
 \usepackage{wrapfig}
+\usepackage{commath}
+
 \begin{document}
 \section{Introduction} \label{sec:intro}
 \par Clamps and "helping hands" are critical tools for skilled, dexterous work. They hold working items like circuit boards steady in a useful position. This seems like an obvious task for a robot - more flexible and user friendly than a purely mechanical solution, but stronger and more tireless than a human assistant. However, the task - holding items to aid dexterous work - has two components which often contradict one another: the grasp needs to hold the object rigidly, but also compliant when necessary. At the same time, it is constrained to avoid certain areas that may be delicate, or in the way of the human. The "Jarvis" project is an attempt to address the problem of providing workplace mechanical assistance in a distributed way - each subproblem is handled by a separate module. 
@@ -48,18 +50,45 @@ The first challenge in selecting a target without a prior model is even knowing 
 
  \begin{wrapfigure}{r}{0.5\textwidth}
 \includegraphics[width=0.48\textwidth]{figures/frames.eps}  
-\caption{Display showing the center of the AoI (target) along with the detected hand and elbow centers.}
+\caption{Display showing the center of the AoI (labelled "target") along with the detected hand and elbow centers.}
 \label{fig:frames}
 \end{wrapfigure}
 \subsection{Segmentation} \label{sec:segmentation}
 After identifying the AoI, Jarvis uses a set of heuristics to identify the target. Our application is geared towards soldering assistance, so the heuristic looks for a flat pcb board. It uses Random Sample Consensus (RANSAC) to fit a plane to the points in the AoI
-\begin{equation}
+\begin{equation} \label{eq:plane}
 ax+by+cz+d=0 
 \end{equation}
  and then filters out any point not on that plane. This procedure assumes that the target the largest plane in the small, floating AoI. While it puts restrictions on the target, it is able to adapt to boards of different sizes and shapes. This step can also be easily swapped out for a different heuristic-based segmentation depending on the application.  
 
-\subsection{grasp Generation}\label{sec:graspgen} 
+\subsection{Grasp Generation}\label{sec:graspgen} 
 Jarvis represents grasps as a coordinate frame with its origin at the target point and oriented so that its z axis points directly towards the gripper and the x axis is along the gripper's closing direction (figure \ref{fig:gripper}.) This representation assumes a simple pinch gripper, but could be used by more complicated grippers as well. 
+\par Finding an appropriate grip requires finding both an orientation and a position. The planar shape of the target provides a useful constraint on the x axis of the grasp: the gripper will ideally close in a direction perpendicular to the plane. Thus the vector normal to the plane - $\hat{\textbf{n}}$ - found in \ref{sec:segmentation} defines the x axis of the grip.
+\begin{equation}
+\hat{\textbf{x}}_{\text{grasp}} = \hat{\textbf{n}}
+\end{equation}
+ Similarly, the human expectation that a handoff occurs on the opposite side of the target helps define the z axis. Jarvis uses the elbow-hand vector as the z axis of the grip so that the hand-off occurs with with robot arm as close to mirroring the human arm as possible. This orientation assumes that the grip will be roughly along the edge of the target that opposes the human's hand.
+ \begin{equation}
+\hat{\textbf{z}}_{\text{grasp}} = \hat{\textbf{v}}_{eh}
+\end{equation}
+The orientation's y component will point along the plane and can be found by taking the cross product of $\hat{\textbf{z}}$ and $\hat{\textbf{x}}$.
+\begin{equation}
+\hat{\textbf{y}}_{\text{grasp}} = \hat{\textbf{z}}_{\text{grasp}} \times \hat{\textbf{x}}_{\text{grasp}}
+\end{equation}
+\par To find a grip point that matches the orientation,  Jarvis first extends the elbow-hand vector by a constant that assures its end will reach beyond the edge of the target.
+\begin{equation} \label{eq:vec_ext}
+\textbf{v}_{eh}^* = 1.5 \textbf{v}_{eh}
+\end{equation}
+The point in the target cloud closest to the vector projected into the target plane (equation \ref{eq:plane}) is guaranteed to be an edge point of the target, if the target cloud has no extraneous points. 
+\begin{equation} \label{eq:planar_proj}
+\textbf{v}_{plane} = \textbf{v}_{eh}^* - 
+				\left(\textbf{v}_{eh}^* \cdot \hat{\textbf{n}} \right) \hat{\textbf{n}}
+\end{equation}
+
+\begin{equation}
+p_{\text{grasp}} = \operatorname*{arg\,min}_{p_i} \left(\,\norm{p_i - v_{eh}^*} | \,p_i \in \text{target cloud}\right)
+\end{equation}
+This search is performed by searching for the nearest neighbor to the extended elbow-hand vector in a k-d tree representation of the target cloud. 
+\par The final grasp is defined by the coordinate frame $ \hat{\textbf{x}}_{\text{grasp}}, \hat{\textbf{y}}_{\text{grasp}}, \hat{\textbf{z}}_{\text{grasp}} $ and the point $p_{\text{grasp}}$.
 
 \begin{wrapfigure}{r}{0.5\textwidth}
 \includegraphics[width=0.48\textwidth]{figures/gripper_diagram.eps}  
@@ -78,6 +107,8 @@ Approaches not used
 \item Implementing a kalman filter on the points in the object or
 \item Running a filter on the plane coefficients
 \end{itemize}
+
+\par This method of grasp detection is slow for two major reasons: it performs 
 
 \section{Bibliography}
 \bibliographystyle{plain} 
